@@ -639,22 +639,22 @@ class WASI {
       }),
       fd_prestat_get: wrap((fd, bufPtr) => {
         const stats = CHECK_FD(fd, 0);
-        if (stats.path) {
-          this.refreshMemory();
-          this.view.setUint8(bufPtr, WASI_PREOPENTYPE_DIR);
-          this.view.setUint32(bufPtr + 4, Buffer.byteLength(stats.path), true);
-          return WASI_ESUCCESS;
+        if (!stats.path) {
+          return WASI_EINVAL;
         }
-        return WASI_EINVAL;
+        this.refreshMemory();
+        this.view.setUint8(bufPtr, WASI_PREOPENTYPE_DIR);
+        this.view.setUint32(bufPtr + 4, Buffer.byteLength(stats.path), true);
+        return WASI_ESUCCESS;
       }),
       fd_prestat_dir_name: wrap((fd, pathPtr, pathLen) => {
         const stats = CHECK_FD(fd, 0);
-        if (stats.path) {
-          this.refreshMemory();
-          Buffer.from(this.memory.buffer).write(stats.path, pathPtr, pathLen, 'utf8');
-          return WASI_ESUCCESS;
+        if (!stats.path) {
+          return WASI_EINVAL;
         }
-        return WASI_EINVAL;
+        this.refreshMemory();
+        Buffer.from(this.memory.buffer).write(stats.path, pathPtr, pathLen, 'utf8');
+        return WASI_ESUCCESS;
       }),
       fd_pwrite: wrap((fd, iovs, iovsLen, offset, nwritten) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_SEEK);
@@ -798,7 +798,7 @@ class WASI {
         fs.mkdirSync(stats.path, path.resolve(stats.path, p));
         return WASI_ESUCCESS;
       }),
-      path_filestat_get: wrap((fd, pathPtr, pathLen, bufPtr) => {
+      path_filestat_get: wrap((fd, flags, pathPtr, pathLen, bufPtr) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_PATH_FILESTAT_GET);
         if (!stats.path) {
           return WASI_EINVAL;
