@@ -1,6 +1,7 @@
 'use strict';
 
 /* eslint-disable no-unused-vars */
+/* eslint-disable arrow-body-style */
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -215,6 +216,11 @@ const WASI_FILESTAT_SET_ATIM_NOW = 1 << 1;
 const WASI_FILESTAT_SET_MTIM = 1 << 2;
 const WASI_FILESTAT_SET_MTIM_NOW = 1 << 3;
 
+const WASI_O_CREAT = 0;
+const WASI_O_DIRECTORY = 1;
+const WASI_O_EXCL = 2;
+const WASI_O_TRUNC = 3;
+
 const WASI_PREOPENTYPE_DIR = 0;
 
 const WASI_DIRCOOKIE_START = 0;
@@ -349,6 +355,58 @@ const ERROR_MAP = {
   // EXFULL: WASI_EXFULL,
 };
 
+const SIGNAL_MAP = {
+  __proto__: null,
+  [WASI_SIGHUP]: 'SIGHUP',
+  [WASI_SIGINT]: 'SIGINT',
+  [WASI_SIGQUIT]: 'SIGQUIT',
+  [WASI_SIGILL]: 'SIGILL',
+  [WASI_SIGTRAP]: 'SIGTRAP',
+  [WASI_SIGABRT]: 'SIGABRT',
+  // [WASI_SIGIOT]: 'SIGIOT',
+  [WASI_SIGBUS]: 'SIGBUS',
+  [WASI_SIGFPE]: 'SIGFPE',
+  [WASI_SIGKILL]: 'SIGKILL',
+  [WASI_SIGUSR1]: 'SIGUSR1',
+  [WASI_SIGSEGV]: 'SIGSEGV',
+  [WASI_SIGUSR2]: 'SIGUSR2',
+  [WASI_SIGPIPE]: 'SIGPIPE',
+  [WASI_SIGALRM]: 'SIGALRM',
+  [WASI_SIGTERM]: 'SIGTERM',
+  [WASI_SIGCHLD]: 'SIGCHLD',
+  [WASI_SIGCONT]: 'SIGCONT',
+  [WASI_SIGSTOP]: 'SIGSTOP',
+  [WASI_SIGTSTP]: 'SIGTSTP',
+  [WASI_SIGTTIN]: 'SIGTTIN',
+  [WASI_SIGTTOU]: 'SIGTTOU',
+  [WASI_SIGURG]: 'SIGURG',
+  [WASI_SIGXCPU]: 'SIGXCPU',
+  [WASI_SIGXFSZ]: 'SIGXFSZ',
+  [WASI_SIGVTALRM]: 'SIGVTALRM',
+  // [WASI_SIGPROF]: 'SIGPROF',
+  // [WASI_SIGWINCH]: 'SIGWINCH',
+  // [WASI_SIGIO]: 'SIGIO',
+  // [WASI_SIGINFO]: 'SIGINFO',
+  // [WASI_SIGSYS]: 'SIGSYS',
+};
+
+const convertOpenFlags = (flags) => {
+  let out = 0;
+  if (flags & WASI_O_CREAT) {
+    out |= fs.constants.O_CREAT;
+  }
+  if (flags & WASI_O_DIRECTORY) {
+    out |= fs.constants.O_DIRECTORY;
+  }
+  if (flags & WASI_O_EXCL) {
+    out |= fs.constants.O_EXCL;
+  }
+  if (flags & WASI_O_TRUNC) {
+    out |= fs.constants.O_TRUNC;
+  }
+  return out;
+};
+
 const now = (clockId) => {
   switch (clockId) {
     case WASI_CLOCK_MONOTONIC:
@@ -360,6 +418,12 @@ const now = (clockId) => {
     default:
       return null;
   }
+};
+
+const msToNs = (ms) => {
+  const decimal = BigInt(Math.trunc(Number.parseFloat((ms % 1).toFixed(3), 10) * 1000));
+  const ns = BigInt(Math.trunc(ms)) * 1000n;
+  return ns + decimal;
 };
 
 const wrap = (f) => (...args) => {
@@ -382,7 +446,7 @@ const stat = (wasi, fd) => {
     throw WASI_EBADF;
   }
   if (entry.filetype === undefined) {
-    const stats = fs.fstatSync(entry.real, { bigint: true });
+    const stats = fs.fstatSync(entry.real);
     let filetype;
     let rightsBase;
     let rightsInheriting;
@@ -435,13 +499,12 @@ const stat = (wasi, fd) => {
       base: rightsBase,
       inheriting: rightsInheriting,
     };
-    entry.stat = stats;
   }
   return entry;
 };
 
 class WASI {
-  constructor({ preopenDir = '.', env = {}, args = [] } = {}) {
+  constructor({ preopenDirectories = { '.': '.' }, env = {}, args = [] } = {}) {
     this.memory = undefined;
     this.view = undefined;
 
@@ -464,16 +527,22 @@ class WASI {
         rights: undefined,
         path: undefined,
       }],
-      [3, {
-        real: fs.openSync(preopenDir),
+    ]);
+
+    for (const [k, v] of Object.entries(preopenDirectories)) {
+      const real = fs.openSync(v);
+      const newfd = [...this.FD_MAP.keys()].reverse()[0] + 1;
+      this.FD_MAP.set(newfd, {
+        real,
         filetype: WASI_FILETYPE_DIRECTORY,
         rights: {
           base: RIGHTS_DIRECTORY_BASE,
           inheriting: RIGHTS_DIRECTORY_INHERITING,
         },
-        path: '.',
-      }],
-    ]);
+        fakePath: k,
+        path: v,
+      });
+    }
 
     const getiovs = (iovs, iovsLen) => {
       // iovs* -> [iov, iov, ...]
@@ -543,7 +612,11 @@ class WASI {
         this.view.setUint32(environBufSize, size, true);
         return WASI_ESUCCESS;
       },
-      clock_res_get: (clockId, resolution) => WASI_ENOSYS,
+      clock_res_get: (clockId, resolution) => {
+        // this.view.setBigUint64(resolution, 0);
+        // return WASI_ESUCCESS;
+        return WASI_ENOSYS;
+      },
       clock_time_get: (clockId, precision, time) => {
         const n = now(clockId);
         if (n === null) {
@@ -600,23 +673,23 @@ class WASI {
       }),
       fd_filestat_get: wrap((fd, bufPtr) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_FD_FILESTAT_GET);
-        const rstats = fs.fstatSync(stats.real, { bigint: true });
+        const rstats = fs.fstatSync(stats.real);
         this.refreshMemory();
-        this.view.setBigUint64(bufPtr, rstats.dev, true);
+        this.view.setBigUint64(bufPtr, BigInt(rstats.dev), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.ino, true);
+        this.view.setBigUint64(bufPtr, BigInt(rstats.ino), true);
         bufPtr += 8;
         this.view.setUint8(bufPtr, stats.filetype);
         bufPtr += 4;
         this.view.setUint32(bufPtr, Number(rstats.nlink), true);
         bufPtr += 4;
-        this.view.setBigUint64(bufPtr, rstats.size, true);
+        this.view.setBigUint64(bufPtr, BigInt(rstats.size), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.atimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.atimeMs), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.mtimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.mtimeMs), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.ctimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.ctimeMs), true);
         bufPtr += 8;
         return WASI_ESUCCESS;
       }),
@@ -644,7 +717,7 @@ class WASI {
         }
         this.refreshMemory();
         this.view.setUint8(bufPtr, WASI_PREOPENTYPE_DIR);
-        this.view.setUint32(bufPtr + 4, Buffer.byteLength(stats.path), true);
+        this.view.setUint32(bufPtr + 4, Buffer.byteLength(stats.fakePath), true);
         return WASI_ESUCCESS;
       }),
       fd_prestat_dir_name: wrap((fd, pathPtr, pathLen) => {
@@ -653,7 +726,7 @@ class WASI {
           return WASI_EINVAL;
         }
         this.refreshMemory();
-        Buffer.from(this.memory.buffer).write(stats.path, pathPtr, pathLen, 'utf8');
+        Buffer.from(this.memory.buffer).write(stats.fakePath, pathPtr, pathLen, 'utf8');
         return WASI_ESUCCESS;
       }),
       fd_pwrite: wrap((fd, iovs, iovsLen, offset, nwritten) => {
@@ -725,8 +798,8 @@ class WASI {
           const entry = entries[i];
           this.view.setBigUint64(bufPtr, BigInt(i + 1), true);
           bufPtr += 8;
-          const rstats = fs.statSync(path.resolve(stats.path, entry.name), { bigint: true });
-          this.view.setBigUint64(bufPtr, rstats.ino, true);
+          const rstats = fs.statSync(path.resolve(stats.path, entry.name));
+          this.view.setBigUint64(bufPtr, BigInt(rstats.ino), true);
           bufPtr += 8;
           this.view.setUint32(bufPtr, Buffer.byteLength(entry.name), true);
           bufPtr += 4;
@@ -805,22 +878,22 @@ class WASI {
         }
         this.refreshMemory();
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
-        const rstats = fs.statSync(path.resolve(stats.path, p), { bigint: true });
-        this.view.setBigUint64(bufPtr, rstats.dev, true);
+        const rstats = fs.statSync(path.resolve(stats.path, p));
+        this.view.setBigUint64(bufPtr, BigInt(rstats.dev), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.ino, true);
+        this.view.setBigUint64(bufPtr, BigInt(rstats.ino), true);
         bufPtr += 8;
         this.view.setUint8(bufPtr, stats.filetype);
         bufPtr += 4;
         this.view.setUint32(bufPtr, Number(rstats.nlink), true);
         bufPtr += 4;
-        this.view.setBigUint64(bufPtr, rstats.size, true);
+        this.view.setBigUint64(bufPtr, BigInt(rstats.size), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.atimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.atimeMs), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.mtimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.mtimeMs), true);
         bufPtr += 8;
-        this.view.setBigUint64(bufPtr, rstats.ctimeMs * 1000n, true);
+        this.view.setBigUint64(bufPtr, msToNs(rstats.ctimeMs), true);
         bufPtr += 8;
         return WASI_ESUCCESS;
       }),
@@ -853,14 +926,14 @@ class WASI {
         fs.linkSync(path.resolve(ostats.path, op), path.resolve(nstats.path, np));
         return WASI_ESUCCESS;
       }),
-      path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oflags,
+      path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oFlags,
         fsRightsBase, fsRightsInheriting, fsFlags, fd) => {
         const stats = CHECK_FD(dirfd, WASI_RIGHT_PATH_OPEN);
-        // TODO: use rights and flags
+        // TODO: use rights
         this.refreshMemory();
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
         const full = path.resolve(stats.path, p);
-        const realfd = fs.openSync(full);
+        const realfd = fs.openSync(full, convertOpenFlags(oFlags));
         const newfd = [...this.FD_MAP.keys()].reverse()[0] + 1;
         this.FD_MAP.set(newfd, {
           real: realfd,
@@ -1012,7 +1085,10 @@ class WASI {
         return WASI_ESUCCESS;
       },
       proc_raise: (sig) => {
-        process.kill(process.pid, sig);
+        if (!(sig in SIGNAL_MAP)) {
+          return WASI_EINVAL;
+        }
+        process.kill(process.pid, SIGNAL_MAP[sig]);
         return WASI_ESUCCESS;
       },
       random_get: (bufPtr, bufLen) => {

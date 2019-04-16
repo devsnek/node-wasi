@@ -9,7 +9,7 @@ A module to use WASI modules with Node.js.
 const WASI = require('wasi');
 
 const wasi = new WASI({
-  // preopenDir: '.',
+  // preopenDirectories: { '.': '.' },
 });
 
 const inst = new WebAssembly.Instance(module, {
