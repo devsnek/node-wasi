@@ -216,10 +216,10 @@ const WASI_FILESTAT_SET_ATIM_NOW = 1 << 1;
 const WASI_FILESTAT_SET_MTIM = 1 << 2;
 const WASI_FILESTAT_SET_MTIM_NOW = 1 << 3;
 
-const WASI_O_CREAT = 0;
-const WASI_O_DIRECTORY = 1;
-const WASI_O_EXCL = 2;
-const WASI_O_TRUNC = 3;
+const WASI_O_CREAT = 1 << 0;
+const WASI_O_DIRECTORY = 1 << 1;
+const WASI_O_EXCL = 1 << 2;
+const WASI_O_TRUNC = 1 << 3;
 
 const WASI_PREOPENTYPE_DIR = 0;
 
@@ -613,9 +613,8 @@ class WASI {
         return WASI_ESUCCESS;
       },
       clock_res_get: (clockId, resolution) => {
-        // this.view.setBigUint64(resolution, 0);
-        // return WASI_ESUCCESS;
-        return WASI_ENOSYS;
+        this.view.setBigUint64(resolution, 0n);
+        return WASI_ESUCCESS;
       },
       clock_time_get: (clockId, precision, time) => {
         const n = now(clockId);
@@ -932,7 +931,23 @@ class WASI {
         // TODO: use rights
         this.refreshMemory();
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
-        const full = path.resolve(stats.path, p);
+        const fullUnresolved = path.resolve(stats.path, p);
+        if (path.relative(stats.path, fullUnresolved).startsWith('..')) {
+          return WASI_ENOTCAPABLE;
+        }
+        let full;
+        try {
+          full = fs.realpathSync(fullUnresolved);
+          if (path.relative(stats.path, full).startsWith('..')) {
+            return WASI_ENOTCAPABLE;
+          }
+        } catch (e) {
+          if (e.code === 'ENOENT') {
+            full = fullUnresolved;
+          } else {
+            throw e;
+          }
+        }
         const realfd = fs.openSync(full, convertOpenFlags(oFlags));
         const newfd = [...this.FD_MAP.keys()].reverse()[0] + 1;
         this.FD_MAP.set(newfd, {
@@ -942,7 +957,7 @@ class WASI {
           path: full,
         });
         stat(this, newfd);
-        this.view.setUint8(fd, newfd);
+        this.view.setUint32(fd, newfd);
         return WASI_ESUCCESS;
       }),
       path_readlink: wrap((fd, pathPtr, pathLen, buf, bufLen, bufused) => {
