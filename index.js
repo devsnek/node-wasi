@@ -867,7 +867,7 @@ class WASI {
           return WASI_EINVAL;
         }
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
-        fs.mkdirSync(stats.path, path.resolve(stats.path, p));
+        fs.mkdirSync(path.resolve(stats.path, p));
         return WASI_ESUCCESS;
       }),
       path_filestat_get: wrap((fd, flags, pathPtr, pathLen, bufPtr) => {
@@ -957,7 +957,7 @@ class WASI {
           path: full,
         });
         stat(this, newfd);
-        this.view.setUint32(fd, newfd);
+        this.view.setUint32(fd, newfd, true);
         return WASI_ESUCCESS;
       }),
       path_readlink: wrap((fd, pathPtr, pathLen, buf, bufLen, bufused) => {
