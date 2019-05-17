@@ -1,7 +1,7 @@
 {
   "name": "wasi",
-  "version": "0.0.2",
-  "description": "",
+  "version": "0.0.3",
+  "description": "WASI for Node.js",
   "main": "index.js",
   "scripts": {
     "test": "node test/run.js"
