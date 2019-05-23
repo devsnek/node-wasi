@@ -15,7 +15,7 @@ int main(void)
     struct stat st;
     int         fd;
     int         ret;
-    off_t       pos;
+    // off_t       pos;
 
     (void) st;
     ret = mkdir(OUTPUT_DIR, 0755);
@@ -24,8 +24,8 @@ int main(void)
     fd = open(PATH, O_CREAT | O_WRONLY, 0666);
     assert(fd != -1);
 
-    pos = lseek(fd, SIZE - 1, SEEK_SET);
-    assert(pos == SIZE - 1);
+    // pos = lseek(fd, SIZE - 1, SEEK_SET);
+    // assert(pos == SIZE - 1);
 
     ret = (int) write(fd, "", 1);
     assert(ret == 1);

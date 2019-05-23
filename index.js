@@ -891,6 +891,7 @@ class WASI {
         if (!stats.path) {
           return WASI_EINVAL;
         }
+        this.refreshMemory();
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
         fs.mkdirSync(path.resolve(stats.path, p));
         return WASI_ESUCCESS;
