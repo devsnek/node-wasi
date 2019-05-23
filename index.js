@@ -647,7 +647,7 @@ class WASI {
       }),
       fd_close: wrap((fd) => {
         const stats = CHECK_FD(fd, 0);
-        fs.closeSync(fd);
+        fs.closeSync(stats.real);
         this.FD_MAP.delete(fd);
         return WASI_ESUCCESS;
       }),
