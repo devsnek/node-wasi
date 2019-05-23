@@ -2,11 +2,13 @@
 
 /* eslint-disable no-unused-vars */
 /* eslint-disable arrow-body-style */
+/* eslint max-len: ["error", { "code": 80 }] */
 
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { isatty: isTTY } = require('tty');
+const { Buffer } = require('buffer');
 
 const CPUTIME_START = process.hrtime.bigint();
 
@@ -159,17 +161,19 @@ const WASI_RIGHT_PATH_UNLINK_FILE = 0x0000000004000000n;
 const WASI_RIGHT_POLL_FD_READWRITE = 0x0000000008000000n;
 const WASI_RIGHT_SOCK_SHUTDOWN = 0x0000000010000000n;
 
-const RIGHTS_ALL = WASI_RIGHT_FD_DATASYNC | WASI_RIGHT_FD_READ | WASI_RIGHT_FD_SEEK
-  | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_SYNC | WASI_RIGHT_FD_TELL
-  | WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_ADVISE | WASI_RIGHT_FD_ALLOCATE
-  | WASI_RIGHT_PATH_CREATE_DIRECTORY | WASI_RIGHT_PATH_CREATE_FILE
-  | WASI_RIGHT_PATH_LINK_SOURCE | WASI_RIGHT_PATH_LINK_TARGET | WASI_RIGHT_PATH_OPEN
-  | WASI_RIGHT_FD_READDIR | WASI_RIGHT_PATH_READLINK | WASI_RIGHT_PATH_RENAME_SOURCE
-  | WASI_RIGHT_PATH_RENAME_TARGET | WASI_RIGHT_PATH_FILESTAT_GET | WASI_RIGHT_PATH_FILESTAT_SET_SIZE
-  | WASI_RIGHT_PATH_FILESTAT_SET_TIMES | WASI_RIGHT_FD_FILESTAT_GET
-  | WASI_RIGHT_FD_FILESTAT_SET_TIMES | WASI_RIGHT_FD_FILESTAT_SET_SIZE | WASI_RIGHT_PATH_SYMLINK
-  | WASI_RIGHT_PATH_UNLINK_FILE | WASI_RIGHT_PATH_REMOVE_DIRECTORY | WASI_RIGHT_POLL_FD_READWRITE
-  | WASI_RIGHT_SOCK_SHUTDOWN;
+const RIGHTS_ALL = WASI_RIGHT_FD_DATASYNC | WASI_RIGHT_FD_READ
+  | WASI_RIGHT_FD_SEEK | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_SYNC
+  | WASI_RIGHT_FD_TELL | WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_ADVISE
+  | WASI_RIGHT_FD_ALLOCATE | WASI_RIGHT_PATH_CREATE_DIRECTORY
+  | WASI_RIGHT_PATH_CREATE_FILE | WASI_RIGHT_PATH_LINK_SOURCE
+  | WASI_RIGHT_PATH_LINK_TARGET | WASI_RIGHT_PATH_OPEN | WASI_RIGHT_FD_READDIR
+  | WASI_RIGHT_PATH_READLINK | WASI_RIGHT_PATH_RENAME_SOURCE
+  | WASI_RIGHT_PATH_RENAME_TARGET | WASI_RIGHT_PATH_FILESTAT_GET
+  | WASI_RIGHT_PATH_FILESTAT_SET_SIZE | WASI_RIGHT_PATH_FILESTAT_SET_TIMES
+  | WASI_RIGHT_FD_FILESTAT_GET | WASI_RIGHT_FD_FILESTAT_SET_TIMES
+  | WASI_RIGHT_FD_FILESTAT_SET_SIZE | WASI_RIGHT_PATH_SYMLINK
+  | WASI_RIGHT_PATH_UNLINK_FILE | WASI_RIGHT_PATH_REMOVE_DIRECTORY
+  | WASI_RIGHT_POLL_FD_READWRITE | WASI_RIGHT_SOCK_SHUTDOWN;
 
 const RIGHTS_BLOCK_DEVICE_BASE = RIGHTS_ALL;
 const RIGHTS_BLOCK_DEVICE_INHERITING = RIGHTS_ALL;
@@ -177,29 +181,35 @@ const RIGHTS_BLOCK_DEVICE_INHERITING = RIGHTS_ALL;
 const RIGHTS_CHARACTER_DEVICE_BASE = RIGHTS_ALL;
 const RIGHTS_CHARACTER_DEVICE_INHERITING = RIGHTS_ALL;
 
-const RIGHTS_REGULAR_FILE_BASE = WASI_RIGHT_FD_DATASYNC | WASI_RIGHT_FD_READ | WASI_RIGHT_FD_SEEK
-  | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_SYNC | WASI_RIGHT_FD_TELL | WASI_RIGHT_FD_WRITE
-  | WASI_RIGHT_FD_ADVISE | WASI_RIGHT_FD_ALLOCATE | WASI_RIGHT_FD_FILESTAT_GET
+const RIGHTS_REGULAR_FILE_BASE = WASI_RIGHT_FD_DATASYNC | WASI_RIGHT_FD_READ
+  | WASI_RIGHT_FD_SEEK | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_SYNC
+  | WASI_RIGHT_FD_TELL | WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_ADVISE
+  | WASI_RIGHT_FD_ALLOCATE | WASI_RIGHT_FD_FILESTAT_GET
   | WASI_RIGHT_FD_FILESTAT_SET_SIZE | WASI_RIGHT_FD_FILESTAT_SET_TIMES
   | WASI_RIGHT_POLL_FD_READWRITE;
 const RIGHTS_REGULAR_FILE_INHERITING = 0n;
 
-const RIGHTS_DIRECTORY_BASE = WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_SYNC
-  | WASI_RIGHT_FD_ADVISE | WASI_RIGHT_PATH_CREATE_DIRECTORY | WASI_RIGHT_PATH_CREATE_FILE
-  | WASI_RIGHT_PATH_LINK_SOURCE | WASI_RIGHT_PATH_LINK_TARGET | WASI_RIGHT_PATH_OPEN
-  | WASI_RIGHT_FD_READDIR | WASI_RIGHT_PATH_READLINK | WASI_RIGHT_PATH_RENAME_SOURCE
-  | WASI_RIGHT_PATH_RENAME_TARGET | WASI_RIGHT_PATH_FILESTAT_GET | WASI_RIGHT_PATH_FILESTAT_SET_SIZE
-  | WASI_RIGHT_PATH_FILESTAT_SET_TIMES | WASI_RIGHT_FD_FILESTAT_GET
-  | WASI_RIGHT_FD_FILESTAT_SET_TIMES | WASI_RIGHT_PATH_SYMLINK | WASI_RIGHT_PATH_UNLINK_FILE
+const RIGHTS_DIRECTORY_BASE = WASI_RIGHT_FD_FDSTAT_SET_FLAGS
+  | WASI_RIGHT_FD_SYNC | WASI_RIGHT_FD_ADVISE | WASI_RIGHT_PATH_CREATE_DIRECTORY
+  | WASI_RIGHT_PATH_CREATE_FILE | WASI_RIGHT_PATH_LINK_SOURCE
+  | WASI_RIGHT_PATH_LINK_TARGET | WASI_RIGHT_PATH_OPEN | WASI_RIGHT_FD_READDIR
+  | WASI_RIGHT_PATH_READLINK | WASI_RIGHT_PATH_RENAME_SOURCE
+  | WASI_RIGHT_PATH_RENAME_TARGET | WASI_RIGHT_PATH_FILESTAT_GET
+  | WASI_RIGHT_PATH_FILESTAT_SET_SIZE | WASI_RIGHT_PATH_FILESTAT_SET_TIMES
+  | WASI_RIGHT_FD_FILESTAT_GET | WASI_RIGHT_FD_FILESTAT_SET_TIMES
+  | WASI_RIGHT_PATH_SYMLINK | WASI_RIGHT_PATH_UNLINK_FILE
   | WASI_RIGHT_PATH_REMOVE_DIRECTORY | WASI_RIGHT_POLL_FD_READWRITE;
-const RIGHTS_DIRECTORY_INHERITING = RIGHTS_DIRECTORY_BASE | RIGHTS_REGULAR_FILE_BASE;
+const RIGHTS_DIRECTORY_INHERITING = RIGHTS_DIRECTORY_BASE
+  | RIGHTS_REGULAR_FILE_BASE;
 
-const RIGHTS_SOCKET_BASE = WASI_RIGHT_FD_READ | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_WRITE
-  | WASI_RIGHT_FD_FILESTAT_GET | WASI_RIGHT_POLL_FD_READWRITE | WASI_RIGHT_SOCK_SHUTDOWN;
+const RIGHTS_SOCKET_BASE = WASI_RIGHT_FD_READ | WASI_RIGHT_FD_FDSTAT_SET_FLAGS
+  | WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_FILESTAT_GET
+  | WASI_RIGHT_POLL_FD_READWRITE | WASI_RIGHT_SOCK_SHUTDOWN;
 const RIGHTS_SOCKET_INHERITING = RIGHTS_ALL;
 
-const RIGHTS_TTY_BASE = WASI_RIGHT_FD_READ | WASI_RIGHT_FD_FDSTAT_SET_FLAGS | WASI_RIGHT_FD_WRITE
-  | WASI_RIGHT_FD_FILESTAT_GET | WASI_RIGHT_POLL_FD_READWRITE;
+const RIGHTS_TTY_BASE = WASI_RIGHT_FD_READ | WASI_RIGHT_FD_FDSTAT_SET_FLAGS
+  | WASI_RIGHT_FD_WRITE | WASI_RIGHT_FD_FILESTAT_GET
+  | WASI_RIGHT_POLL_FD_READWRITE;
 const RIGHTS_TTY_INHERITING = 0n;
 
 const WASI_CLOCK_MONOTONIC = 0;
@@ -421,7 +431,9 @@ const now = (clockId) => {
 };
 
 const msToNs = (ms) => {
-  const decimal = BigInt(Math.trunc(Number.parseFloat((ms % 1).toFixed(3), 10) * 1000));
+  const decimal = BigInt(
+    Math.trunc(Number.parseFloat((ms % 1).toFixed(3), 10) * 1000),
+  );
   const ns = BigInt(Math.trunc(ms)) * 1000n;
   return ns + decimal;
 };
@@ -607,7 +619,8 @@ class WASI {
         this.refreshMemory();
         const envProcessed = Object.entries(env)
           .map(([key, value]) => `${key}=${value}`);
-        const size = envProcessed.reduce((acc, e) => acc + Buffer.byteLength(e), 0);
+        const size = envProcessed.reduce((acc, e) =>
+          acc + Buffer.byteLength(e), 0);
         this.view.setUint32(environCount, envProcessed.length, true);
         this.view.setUint32(environBufSize, size, true);
         return WASI_ESUCCESS;
@@ -634,7 +647,7 @@ class WASI {
       }),
       fd_close: wrap((fd) => {
         const stats = CHECK_FD(fd, 0);
-        fs.closeSync(stats.real);
+        fs.closeSync(fd);
         this.FD_MAP.delete(fd);
         return WASI_ESUCCESS;
       }),
@@ -649,7 +662,9 @@ class WASI {
         this.view.setUint16(bufPtr + 2, 0, true); // FDFLAG u16
         this.view.setUint16(bufPtr + 4, 0, true); // FDFLAG u16
         this.view.setBigUint64(bufPtr + 8, stats.rights.base, true); // u64
-        this.view.setBigUint64(bufPtr + 8 + 8, stats.rights.inheriting, true); // u64
+        this.view.setBigUint64(
+          bufPtr + 8 + 8, stats.rights.inheriting, true,
+        ); // u64
         return WASI_ESUCCESS;
       }),
       fd_fdstat_set_flags: wrap((fd, flags) => {
@@ -700,8 +715,10 @@ class WASI {
       fd_filestat_set_times: wrap((fd, stAtim, stMtim, fstflags) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_FD_FILESTAT_SET_TIMES);
         const n = now(WASI_CLOCK_REALTIME);
-        const atimNow = (fstflags & WASI_FILESTAT_SET_ATIM_NOW) === WASI_FILESTAT_SET_ATIM_NOW;
-        const mtimNow = (fstflags & WASI_FILESTAT_SET_MTIM_NOW) === WASI_FILESTAT_SET_MTIM_NOW;
+        const atimNow = (fstflags & WASI_FILESTAT_SET_ATIM_NOW)
+          === WASI_FILESTAT_SET_ATIM_NOW;
+        const mtimNow = (fstflags & WASI_FILESTAT_SET_MTIM_NOW)
+          === WASI_FILESTAT_SET_MTIM_NOW;
         fs.futimesSync(
           stats.real,
           atimNow ? n : stAtim,
@@ -716,7 +733,9 @@ class WASI {
         }
         this.refreshMemory();
         this.view.setUint8(bufPtr, WASI_PREOPENTYPE_DIR);
-        this.view.setUint32(bufPtr + 4, Buffer.byteLength(stats.fakePath), true);
+        this.view.setUint32(
+          bufPtr + 4, Buffer.byteLength(stats.fakePath), true,
+        );
         return WASI_ESUCCESS;
       }),
       fd_prestat_dir_name: wrap((fd, pathPtr, pathLen) => {
@@ -725,7 +744,8 @@ class WASI {
           return WASI_EINVAL;
         }
         this.refreshMemory();
-        Buffer.from(this.memory.buffer).write(stats.fakePath, pathPtr, pathLen, 'utf8');
+        Buffer.from(this.memory.buffer)
+          .write(stats.fakePath, pathPtr, pathLen, 'utf8');
         return WASI_ESUCCESS;
       }),
       fd_pwrite: wrap((fd, iovs, iovsLen, offset, nwritten) => {
@@ -735,7 +755,9 @@ class WASI {
           .forEach((iov) => {
             let w = 0;
             while (w < iov.byteLength) {
-              w += fs.writeSync(stats.real, iov, w, iov.byteLength - w, offset + written + w);
+              w += fs.writeSync(
+                stats.real, iov, w, iov.byteLength - w, offset + written + w,
+              );
             }
             written += w;
           });
@@ -763,7 +785,9 @@ class WASI {
           .forEach((iov) => {
             let r = 0;
             while (r < iov.byteLength) {
-              r += fs.readSync(stats.real, iov, r, iov.byteLength - r, offset + read + r);
+              r += fs.readSync(
+                stats.real, iov, r, iov.byteLength - r, offset + read + r,
+              );
             }
             read += r;
           });
@@ -832,7 +856,8 @@ class WASI {
           this.view.setUint8(bufPtr, filetype);
           bufPtr += 1;
           bufPtr += 3; // padding
-          Buffer.from(this.memory.buffer).write(entry.name, bufPtr, bufLen - bufPtr);
+          Buffer.from(this.memory.buffer)
+            .write(entry.name, bufPtr, bufLen - bufPtr);
           bufPtr += Buffer.byteLength(entry.name);
           bufPtr += (8 % bufPtr); // padding
         }
@@ -896,35 +921,47 @@ class WASI {
         bufPtr += 8;
         return WASI_ESUCCESS;
       }),
-      path_filestat_set_times: wrap((fd, fstflags, pathPtr, pathLen, stAtim, stMtim) => {
-        const stats = CHECK_FD(fd, WASI_RIGHT_PATH_FILESTAT_SET_TIMES);
-        if (!stats.path) {
-          return WASI_EINVAL;
-        }
-        this.refreshMemory();
-        const n = now(WASI_CLOCK_REALTIME);
-        const atimNow = (fstflags & WASI_FILESTAT_SET_ATIM_NOW) === WASI_FILESTAT_SET_ATIM_NOW;
-        const mtimNow = (fstflags & WASI_FILESTAT_SET_MTIM_NOW) === WASI_FILESTAT_SET_MTIM_NOW;
-        const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
-        fs.utimesSync(
-          path.resolve(stats.path, p),
-          atimNow ? n : stAtim,
-          mtimNow ? n : stMtim,
-        );
-        return WASI_ESUCCESS;
-      }),
-      path_link: wrap((oldFd, oldFlags, oldPath, oldPathLen, newFd, newPath, newPathLen) => {
-        const ostats = CHECK_FD(oldFd, WASI_RIGHT_PATH_LINK_SOURCE);
-        const nstats = CHECK_FD(newFd, WASI_RIGHT_PATH_LINK_TARGET);
-        if (!ostats.path || !nstats.path) {
-          return WASI_EINVAL;
-        }
-        this.refreshMemory();
-        const op = Buffer.from(this.memory.buffer, oldPath, oldPathLen).toString();
-        const np = Buffer.from(this.memory.buffer, newPath, newPathLen).toString();
-        fs.linkSync(path.resolve(ostats.path, op), path.resolve(nstats.path, np));
-        return WASI_ESUCCESS;
-      }),
+      path_filestat_set_times:
+        wrap((fd, fstflags, pathPtr, pathLen, stAtim, stMtim) => {
+          const stats = CHECK_FD(fd, WASI_RIGHT_PATH_FILESTAT_SET_TIMES);
+          if (!stats.path) {
+            return WASI_EINVAL;
+          }
+          this.refreshMemory();
+          const n = now(WASI_CLOCK_REALTIME);
+          const atimNow = (fstflags & WASI_FILESTAT_SET_ATIM_NOW)
+            === WASI_FILESTAT_SET_ATIM_NOW;
+          const mtimNow = (fstflags & WASI_FILESTAT_SET_MTIM_NOW)
+            === WASI_FILESTAT_SET_MTIM_NOW;
+          const p = Buffer.from(this.memory.buffer, pathPtr, pathLen)
+            .toString();
+          fs.utimesSync(
+            path.resolve(stats.path, p),
+            atimNow ? n : stAtim,
+            mtimNow ? n : stMtim,
+          );
+          return WASI_ESUCCESS;
+        }),
+      path_link: wrap(
+        (oldFd, oldFlags, oldPath, oldPathLen, newFd, newPath, newPathLen) => {
+          const ostats = CHECK_FD(oldFd, WASI_RIGHT_PATH_LINK_SOURCE);
+          const nstats = CHECK_FD(newFd, WASI_RIGHT_PATH_LINK_TARGET);
+          if (!ostats.path || !nstats.path) {
+            return WASI_EINVAL;
+          }
+          this.refreshMemory();
+          const op = Buffer.from(
+            this.memory.buffer, oldPath, oldPathLen,
+          ).toString();
+          const np = Buffer.from(
+            this.memory.buffer, newPath, newPathLen,
+          ).toString();
+          fs.linkSync(
+            path.resolve(ostats.path, op), path.resolve(nstats.path, np),
+          );
+          return WASI_ESUCCESS;
+        },
+      ),
       path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oFlags,
         fsRightsBase, fsRightsInheriting, fsFlags, fd) => {
         const stats = CHECK_FD(dirfd, WASI_RIGHT_PATH_OPEN);
@@ -983,26 +1020,38 @@ class WASI {
         fs.rmdirSync(path.resolve(stats.path, p));
         return WASI_ESUCCESS;
       }),
-      path_rename: wrap((oldFd, oldPath, oldPathLen, newFd, newPath, newPathLen) => {
-        const ostats = CHECK_FD(oldFd, WASI_RIGHT_PATH_RENAME_SOURCE);
-        const nstats = CHECK_FD(newFd, WASI_RIGHT_PATH_RENAME_TARGET);
-        if (!ostats.path || !nstats.path) {
-          return WASI_EINVAL;
-        }
-        this.refreshMemory();
-        const op = Buffer.from(this.memory.buffer, oldPath, oldPathLen).toString();
-        const np = Buffer.from(this.memory.buffer, newPath, newPathLen).toString();
-        fs.renameSync(path.resolve(ostats.path, op), path.resolve(nstats.path, np));
-        return WASI_ESUCCESS;
-      }),
+      path_rename: wrap(
+        (oldFd, oldPath, oldPathLen, newFd, newPath, newPathLen) => {
+          const ostats = CHECK_FD(oldFd, WASI_RIGHT_PATH_RENAME_SOURCE);
+          const nstats = CHECK_FD(newFd, WASI_RIGHT_PATH_RENAME_TARGET);
+          if (!ostats.path || !nstats.path) {
+            return WASI_EINVAL;
+          }
+          this.refreshMemory();
+          const op = Buffer.from(
+            this.memory.buffer, oldPath, oldPathLen,
+          ).toString();
+          const np = Buffer.from(
+            this.memory.buffer, newPath, newPathLen,
+          ).toString();
+          fs.renameSync(
+            path.resolve(ostats.path, op), path.resolve(nstats.path, np),
+          );
+          return WASI_ESUCCESS;
+        },
+      ),
       path_symlink: wrap((oldPath, oldPathLen, fd, newPath, newPathLen) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_PATH_SYMLINK);
         if (!stats.path) {
           return WASI_EINVAL;
         }
         this.refreshMemory();
-        const op = Buffer.from(this.memory.buffer, oldPath, oldPathLen).toString();
-        const np = Buffer.from(this.memory.buffer, newPath, newPathLen).toString();
+        const op = Buffer.from(
+          this.memory.buffer, oldPath, oldPathLen,
+        ).toString();
+        const np = Buffer.from(
+          this.memory.buffer, newPath, newPathLen,
+        ).toString();
         fs.symlinkSync(op, path.resolve(stats.path, np));
         return WASI_ESUCCESS;
       }),
@@ -1108,11 +1157,13 @@ class WASI {
       },
       random_get: (bufPtr, bufLen) => {
         this.refreshMemory();
-        crypto.randomFillSync(new Uint8Array(this.memory.buffer), bufPtr, bufLen);
+        crypto.randomFillSync(
+          new Uint8Array(this.memory.buffer), bufPtr, bufLen,
+        );
         return WASI_ESUCCESS;
       },
       sched_yield() {
-        // single threaded environment
+        // Single threaded environment
         return WASI_ENOSYS;
       },
       sock_recv() {

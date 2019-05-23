@@ -7,7 +7,6 @@ const cp = require('child_process');
 const SKIP = [
   'poll',
   'stat',
-  'write_file',
 ];
 
 const C_DIR = path.resolve(__dirname, 'c');

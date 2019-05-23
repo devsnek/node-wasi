@@ -10,7 +10,7 @@ const mod = new WebAssembly.Module(bin);
 
 const wasi = new WASI({
   preopenDirectories: {
-    '/sandbox': path.resolve(__dirname, 'sandbox_outer', 'sandbox_inner'),
+    '/sandbox': path.resolve(__dirname, 'sandbox_outer', 'sandbox'),
   },
 });
 
