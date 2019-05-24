@@ -7,7 +7,6 @@ const cp = require('child_process');
 const SKIP = [
   'poll',
   'stat',
-  'write_file',
 ];
 
 const C_DIR = path.resolve(__dirname, 'c');
@@ -23,6 +22,11 @@ function exec(command) {
   }
 }
 
+function cleanup() {
+  exec(`rm -rf ${__dirname}/sandbox_outer/sandbox/testdir`);
+  exec(`rm -rf ${__dirname}/sandbox_outer/sandbox/output.txt`);
+}
+
 const files = process.argv[2] ? [process.argv[2]] : fs.readdirSync(C_DIR);
 
 files.forEach((filename) => {
@@ -34,9 +38,9 @@ files.forEach((filename) => {
 
   console.log(file);
 
-  exec(`/opt/wasi-sdk/bin/clang ${C_DIR}/${filename} -target wasm32-unknown-wasi -o ${OUT_DIR}/${file}.wasm`);
+  cleanup();
 
-  exec(`rm -rf ${__dirname}/sandbox_outer/sandbox/testdir`);
+  exec(`/opt/wasi-sdk/bin/clang ${C_DIR}/${filename} -target wasm32-unknown-wasi -o ${OUT_DIR}/${file}.wasm`);
 
   const code = exec(`node --experimental-wasm-bigint ${RUNNER_PATH} ${OUT_DIR}/${file}.wasm`);
 
@@ -44,3 +48,5 @@ files.forEach((filename) => {
     throw new Error(`${file}: exit ${code}`);
   }
 });
+
+cleanup();

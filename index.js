@@ -400,23 +400,6 @@ const SIGNAL_MAP = {
   // [WASI_SIGSYS]: 'SIGSYS',
 };
 
-const convertOpenFlags = (flags) => {
-  let out = 0;
-  if (flags & WASI_O_CREAT) {
-    out |= fs.constants.O_CREAT;
-  }
-  if (flags & WASI_O_DIRECTORY) {
-    out |= fs.constants.O_DIRECTORY;
-  }
-  if (flags & WASI_O_EXCL) {
-    out |= fs.constants.O_EXCL;
-  }
-  if (flags & WASI_O_TRUNC) {
-    out |= fs.constants.O_TRUNC;
-  }
-  return out;
-};
-
 const now = (clockId) => {
   switch (clockId) {
     case WASI_CLOCK_MONOTONIC:
@@ -507,10 +490,12 @@ const stat = (wasi, fd) => {
         break;
     }
     entry.filetype = filetype;
-    entry.rights = {
-      base: rightsBase,
-      inheriting: rightsInheriting,
-    };
+    if (entry.rights === undefined) {
+      entry.rights = {
+        base: rightsBase,
+        inheriting: rightsInheriting,
+      };
+    }
   }
   return entry;
 };
@@ -963,10 +948,77 @@ class WASI {
           return WASI_ESUCCESS;
         },
       ),
-      path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oFlags,
+      path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oflags,
         fsRightsBase, fsRightsInheriting, fsFlags, fd) => {
         const stats = CHECK_FD(dirfd, WASI_RIGHT_PATH_OPEN);
-        // TODO: use rights
+
+        const read = (fsRightsBase
+            & (WASI_RIGHT_FD_READ | WASI_RIGHT_FD_READDIR)) !== 0n;
+        const write = (fsRightsBase
+          & (WASI_RIGHT_FD_DATASYNC
+            | WASI_RIGHT_FD_WRITE
+            | WASI_RIGHT_FD_ALLOCATE
+            | WASI_RIGHT_FD_FILESTAT_SET_SIZE)) !== 0n;
+
+        let noflags;
+        if (write && read) {
+          noflags = fs.constants.O_RDWR;
+        } else if (read) {
+          noflags = fs.constants.O_RDONLY;
+        } else if (write) {
+          noflags = fs.constants.O_WRONLY;
+        }
+
+        let neededBase = WASI_RIGHT_PATH_OPEN;
+        let neededInheriting = fsRightsBase | fsRightsInheriting;
+
+        if ((oflags & WASI_O_CREAT) !== 0) {
+          noflags |= fs.constants.O_CREAT;
+          neededBase |= WASI_RIGHT_PATH_CREATE_FILE;
+        }
+        if ((oflags & WASI_O_DIRECTORY) !== 0) {
+          noflags |= fs.constants.O_DIRECTORY;
+        }
+        if ((oflags & WASI_O_EXCL) !== 0) {
+          noflags |= fs.constants.O_EXCL;
+        }
+        if ((oflags & WASI_O_TRUNC) !== 0) {
+          noflags |= fs.constants.O_TRUNC;
+          neededBase |= WASI_RIGHT_PATH_FILESTAT_SET_SIZE;
+        }
+
+        // Convert file descriptor flags.
+        if ((fsFlags & WASI_FDFLAG_APPEND) !== 0) {
+          noflags |= fs.constants.O_APPEND;
+        }
+        if ((fsFlags & WASI_FDFLAG_DSYNC) !== 0) {
+          if (fs.constants.O_DSYNC) {
+            noflags |= fs.constants.O_DSYNC;
+          } else {
+            noflags |= fs.constants.O_SYNC;
+          }
+          neededInheriting |= WASI_RIGHT_FD_DATASYNC;
+        }
+        if ((fsFlags & WASI_FDFLAG_NONBLOCK) !== 0) {
+          noflags |= fs.constants.O_NONBLOCK;
+        }
+        if ((fsFlags & WASI_FDFLAG_RSYNC) !== 0) {
+          if (fs.constants.O_RSYNC) {
+            noflags |= fs.constants.O_RSYNC;
+          } else {
+            noflags |= fs.constants.O_SYNC;
+          }
+          neededInheriting |= WASI_RIGHT_FD_SYNC;
+        }
+        if ((fsFlags & WASI_FDFLAG_SYNC) !== 0) {
+          noflags |= fs.constants.O_SYNC;
+          neededInheriting |= WASI_RIGHT_FD_SYNC;
+        }
+        if (write && (noflags
+            & (fs.constants.O_APPEND | fs.constants.O_TRUNC)) === 0) {
+          neededInheriting |= WASI_RIGHT_FD_SEEK;
+        }
+
         this.refreshMemory();
         const p = Buffer.from(this.memory.buffer, pathPtr, pathLen).toString();
         const fullUnresolved = path.resolve(stats.path, p);
@@ -986,16 +1038,21 @@ class WASI {
             throw e;
           }
         }
-        const realfd = fs.openSync(full, convertOpenFlags(oFlags));
+        const realfd = fs.openSync(full, noflags);
+
         const newfd = [...this.FD_MAP.keys()].reverse()[0] + 1;
         this.FD_MAP.set(newfd, {
           real: realfd,
           filetype: undefined,
-          rights: undefined,
+          rights: {
+            base: neededBase,
+            inheriting: neededInheriting,
+          },
           path: full,
         });
         stat(this, newfd);
         this.view.setUint32(fd, newfd, true);
+
         return WASI_ESUCCESS;
       }),
       path_readlink: wrap((fd, pathPtr, pathLen, buf, bufLen, bufused) => {
