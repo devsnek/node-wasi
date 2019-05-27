@@ -1,3 +1,5 @@
+// STDOUT: hello from input.txt\nhello from input.txt\n
+
 #include <assert.h>
 #include <stdio.h>
 

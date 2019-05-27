@@ -1,3 +1,6 @@
+// STDIN: hello world
+// STDOUT: hello world
+
 #include <stdio.h>
 
 int main(void)
