@@ -247,6 +247,7 @@ const ERROR_MAP = {
   EADDRNOTAVAIL: WASI_EADDRNOTAVAIL,
   EAFNOSUPPORT: WASI_EAFNOSUPPORT,
   EALREADY: WASI_EALREADY,
+  EAGAIN: WASI_EAGAIN,
   // EBADE: WASI_EBADE,
   EBADF: WASI_EBADF,
   // EBADFD: WASI_EBADFD,
@@ -583,7 +584,7 @@ class WASI {
       args_sizes_get: (argc, argvBufSize) => {
         this.refreshMemory();
         this.view.setUint32(argc, args.length, true);
-        const size = args.reduce((acc, a) => acc + Buffer.byteLength(a), 0);
+        const size = args.reduce((acc, a) => acc + Buffer.byteLength(a) + 1, 0);
         this.view.setUint32(argvBufSize, size, true);
         return WASI_ESUCCESS;
       },
@@ -858,11 +859,11 @@ class WASI {
         this.FD_MAP.delete(to);
         return WASI_ESUCCESS;
       }),
-      fd_seek: wrap((fd, offset, whence, newoffset) => {
+      fd_seek: wrap((fd, offset, whence, newOffset) => {
         CHECK_FD(fd, WASI_RIGHT_FD_SEEK);
         return WASI_ENOSYS;
       }),
-      fd_tell: wrap((fd, newOffset) => {
+      fd_tell: wrap((fd, offset) => {
         CHECK_FD(fd, WASI_RIGHT_FD_TELL);
         return WASI_ENOSYS;
       }),
