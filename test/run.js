@@ -62,6 +62,8 @@ files.forEach((filename) => {
 
   console.log(file); // eslint-disable-line no-console
 
+  cleanup();
+
   exec(`/opt/wasi-sdk/bin/clang ${C_DIR}/${filename} -target wasm32-wasi -o ${OUT_DIR}/${file}.wasm`);
 
   const { code, stdout } = exec(`node --experimental-wasm-bigint ${RUNNER_PATH} ${OUT_DIR}/${file}.wasm`, {
