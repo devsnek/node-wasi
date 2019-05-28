@@ -644,6 +644,7 @@ class WASI {
       },
       fd_fdstat_get: wrap((fd, bufPtr) => {
         const stats = CHECK_FD(fd, 0);
+        this.refreshMemory();
         this.view.setUint8(bufPtr, stats.filetype); // FILETYPE u8
         this.view.setUint16(bufPtr + 2, 0, true); // FDFLAG u16
         this.view.setUint16(bufPtr + 4, 0, true); // FDFLAG u16
