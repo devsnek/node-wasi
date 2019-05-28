@@ -508,19 +508,19 @@ class WASI {
 
     this.FD_MAP = new Map([
       [WASI_STDIN_FILENO, {
-        real: process.stdin.fd,
+        real: 0,
         filetype: undefined,
         rights: undefined,
         path: undefined,
       }],
       [WASI_STDOUT_FILENO, {
-        real: process.stdout.fd,
+        real: 1,
         filetype: undefined,
         rights: undefined,
         path: undefined,
       }],
       [WASI_STDERR_FILENO, {
-        real: process.stderr.fd,
+        real: 2,
         filetype: undefined,
         rights: undefined,
         path: undefined,
