@@ -1,6 +1,4 @@
 #include <unistd.h>
-#include <stdlib.h>
-#include <assert.h>
 
 int main(void)
 {
