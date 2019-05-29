@@ -415,10 +415,9 @@ const now = (clockId) => {
 };
 
 const msToNs = (ms) => {
-  const decimal = BigInt(
-    Math.trunc(Number.parseFloat((ms % 1).toFixed(3), 10) * 1000),
-  );
-  const ns = BigInt(Math.trunc(ms)) * 1000n;
+  const msInt = Math.trunc(ms);
+  const decimal = BigInt(Math.round((ms - msInt) * 1000));
+  const ns = BigInt(msInt) * 1000n;
   return ns + decimal;
 };
 
