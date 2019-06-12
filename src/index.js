@@ -616,19 +616,19 @@ class WASI {
         this.refreshMemory();
         let coffset = environ;
         let offset = environBuf;
-        const envProcessed = Object.entries(env)
-          .map(([key, value]) => `${key}=${value}`);
-        envProcessed.forEach((e) => {
-          this.view.setUint32(coffset, offset, true);
-          coffset += 4;
-          offset += Buffer.from(this.memory.buffer).write(e, offset);
-        });
+        Object.entries(env)
+          .forEach(([key, value]) => {
+            this.view.setUint32(coffset, offset, true);
+            coffset += 4;
+            offset += Buffer.from(this.memory.buffer)
+              .write(`${key}=${value}\0`, offset);
+          });
         return WASI_ESUCCESS;
       },
       environ_sizes_get: (environCount, environBufSize) => {
         this.refreshMemory();
         const envProcessed = Object.entries(env)
-          .map(([key, value]) => `${key}=${value}`);
+          .map(([key, value]) => `${key}=${value}\0`);
         const size = envProcessed.reduce((acc, e) =>
           acc + Buffer.byteLength(e), 0);
         this.view.setUint32(environCount, envProcessed.length, true);
