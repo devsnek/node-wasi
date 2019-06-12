@@ -4,6 +4,8 @@
 /* eslint-disable arrow-body-style */
 /* eslint max-len: ["error", { "code": 80 }] */
 
+const binding = require('bindings')('wasi');
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -239,6 +241,10 @@ const WASI_STDIN_FILENO = 0;
 const WASI_STDOUT_FILENO = 1;
 const WASI_STDERR_FILENO = 2;
 
+const WASI_WHENCE_CUR = 0;
+const WASI_WHENCE_END = 1;
+const WASI_WHENCE_SET = 2;
+
 // http://man7.org/linux/man-pages/man3/errno.3.html
 const ERROR_MAP = {
   E2BIG: WASI_E2BIG,
@@ -413,6 +419,7 @@ const now = (clockId) => {
       return null;
   }
 };
+
 
 const msToNs = (ms) => {
   const msInt = Math.trunc(ms);
@@ -859,13 +866,29 @@ class WASI {
         this.FD_MAP.delete(to);
         return WASI_ESUCCESS;
       }),
-      fd_seek: wrap((fd, offset, whence, newOffset) => {
-        CHECK_FD(fd, WASI_RIGHT_FD_SEEK);
-        return WASI_ENOSYS;
+      fd_seek: wrap((fd, offset, whence, newOffsetPtr) => {
+        const stats = CHECK_FD(fd, WASI_RIGHT_FD_SEEK);
+        const newOffset = binding.seek(stats.real, offset, {
+          [WASI_WHENCE_CUR]: binding.SEEK_CUR,
+          [WASI_WHENCE_END]: binding.SEEK_END,
+          [WASI_WHENCE_SET]: binding.SEEK_SET,
+        }[whence]);
+        if (typeof newOffset === 'number') { // errno
+          throw newOffset;
+        }
+        this.refreshMemory();
+        this.view.setBigUint64(newOffsetPtr, newOffset, true);
+        return WASI_ESUCCESS;
       }),
-      fd_tell: wrap((fd, offset) => {
-        CHECK_FD(fd, WASI_RIGHT_FD_TELL);
-        return WASI_ENOSYS;
+      fd_tell: wrap((fd, offsetPtr) => {
+        const stats = CHECK_FD(fd, WASI_RIGHT_FD_TELL);
+        const currentOffset = binding.seek(stats.real, 0n, binding.SEEK_CUR);
+        if (typeof currentOffset === 'number') { // errno
+          throw currentOffset;
+        }
+        this.refreshMemory();
+        this.view.setBigUint64(offsetPtr, currentOffset, true);
+        return WASI_ESUCCESS;
       }),
       fd_sync: wrap((fd) => {
         const stats = CHECK_FD(fd, WASI_RIGHT_FD_SYNC);
@@ -950,7 +973,7 @@ class WASI {
         },
       ),
       path_open: wrap((dirfd, dirflags, pathPtr, pathLen, oflags,
-        fsRightsBase, fsRightsInheriting, fsFlags, fd) => {
+                       fsRightsBase, fsRightsInheriting, fsFlags, fd) => {
         const stats = CHECK_FD(dirfd, WASI_RIGHT_PATH_OPEN);
 
         const read = (fsRightsBase

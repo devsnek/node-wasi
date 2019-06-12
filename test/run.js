@@ -7,7 +7,6 @@ const assert = require('assert');
 
 const SKIP = [
   'poll',
-  'stat',
 ];
 
 const C_DIR = path.resolve(__dirname, 'c');

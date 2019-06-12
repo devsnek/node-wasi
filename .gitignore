@@ -1,3 +1,5 @@
-test/out
-test/sandbox_outer/sandbox/output.txt
-test/sandbox_outer/sandbox/testdir
+/test/out
+/test/sandbox_outer/sandbox/output.txt
+/test/sandbox_outer/sandbox/testdir
+/build
+node_modules

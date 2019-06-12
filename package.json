@@ -2,7 +2,7 @@
   "name": "wasi",
   "version": "0.0.4",
   "description": "WASI for Node.js",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
     "test": "node test/run.js"
   },
@@ -18,5 +18,9 @@
   "bugs": {
     "url": "https://github.com/devsnek/node-wasi/issues"
   },
-  "homepage": "https://github.com/devsnek/node-wasi#readme"
+  "homepage": "https://github.com/devsnek/node-wasi#readme",
+  "dependencies": {
+    "bindings": "^1.5.0"
+  },
+  "gypfile": true
 }

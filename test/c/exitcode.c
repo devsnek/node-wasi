@@ -1,6 +1,5 @@
 // EXIT: 120
 
-int main()
-{
-    return 120;
+int main() {
+  return 120;
 }
