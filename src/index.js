@@ -442,6 +442,68 @@ const wrap = (f) => (...args) => {
   }
 };
 
+const translateFileAttributes = (fd, stats) => {
+  switch (true) {
+    case stats.isBlockDevice():
+      return {
+        filetype: WASI_FILETYPE_BLOCK_DEVICE,
+        rightsBase: RIGHTS_BLOCK_DEVICE_BASE,
+        rightsInheriting: RIGHTS_BLOCK_DEVICE_INHERITING,
+      };
+    case stats.isCharacterDevice(): {
+      const filetype = WASI_FILETYPE_CHARACTER_DEVICE;
+      if (fd !== undefined && isTTY(fd)) {
+        return {
+          filetype,
+          rightsBase: RIGHTS_TTY_BASE,
+          rightsInheriting: RIGHTS_TTY_INHERITING,
+        };
+      }
+      return {
+        filetype,
+        rightsBase: RIGHTS_CHARACTER_DEVICE_BASE,
+        rightsInheriting: RIGHTS_CHARACTER_DEVICE_INHERITING,
+      };
+    }
+    case stats.isDirectory():
+      return {
+        filetype: WASI_FILETYPE_DIRECTORY,
+        rightsBase: RIGHTS_DIRECTORY_BASE,
+        rightsInheriting: RIGHTS_DIRECTORY_INHERITING,
+      };
+    case stats.isFIFO():
+      return {
+        filetype: WASI_FILETYPE_SOCKET_STREAM,
+        rightsBase: RIGHTS_SOCKET_BASE,
+        rightsInheriting: RIGHTS_SOCKET_INHERITING,
+      };
+    case stats.isFile():
+      return {
+        filetype: WASI_FILETYPE_REGULAR_FILE,
+        rightsBase: RIGHTS_REGULAR_FILE_BASE,
+        rightsInheriting: RIGHTS_REGULAR_FILE_INHERITING,
+      };
+    case stats.isSocket():
+      return {
+        filetype: WASI_FILETYPE_SOCKET_STREAM,
+        rightsBase: RIGHTS_SOCKET_BASE,
+        rightsInheriting: RIGHTS_SOCKET_INHERITING,
+      };
+    case stats.isSymbolicLink():
+      return {
+        filetype: WASI_FILETYPE_SYMBOLIC_LINK,
+        rightsBase: 0n,
+        rightsInheriting: 0n,
+      };
+    default:
+      return {
+        filetype: WASI_FILETYPE_UNKNOWN,
+        rightsBase: 0n,
+        rightsInheriting: 0n,
+      };
+  }
+};
+
 const stat = (wasi, fd) => {
   const entry = wasi.FD_MAP.get(fd);
   if (!entry) {
@@ -449,53 +511,9 @@ const stat = (wasi, fd) => {
   }
   if (entry.filetype === undefined) {
     const stats = fs.fstatSync(entry.real);
-    let filetype;
-    let rightsBase;
-    let rightsInheriting;
-    switch (true) {
-      case stats.isBlockDevice():
-        filetype = WASI_FILETYPE_BLOCK_DEVICE;
-        rightsBase = RIGHTS_BLOCK_DEVICE_BASE;
-        rightsInheriting = RIGHTS_BLOCK_DEVICE_INHERITING;
-        break;
-      case stats.isCharacterDevice(): {
-        filetype = WASI_FILETYPE_CHARACTER_DEVICE;
-        if (isTTY(fd)) {
-          rightsBase = RIGHTS_TTY_BASE;
-          rightsInheriting = RIGHTS_TTY_INHERITING;
-        } else {
-          rightsBase = RIGHTS_CHARACTER_DEVICE_BASE;
-          rightsInheriting = RIGHTS_CHARACTER_DEVICE_INHERITING;
-        }
-        break;
-      }
-      case stats.isDirectory():
-        filetype = WASI_FILETYPE_DIRECTORY;
-        rightsBase = RIGHTS_DIRECTORY_BASE;
-        rightsInheriting = RIGHTS_DIRECTORY_INHERITING;
-        break;
-      case stats.isFIFO():
-        filetype = WASI_FILETYPE_SOCKET_STREAM;
-        rightsBase = RIGHTS_SOCKET_BASE;
-        rightsInheriting = RIGHTS_SOCKET_INHERITING;
-        break;
-      case stats.isFile():
-        filetype = WASI_FILETYPE_REGULAR_FILE;
-        rightsBase = RIGHTS_REGULAR_FILE_BASE;
-        rightsInheriting = RIGHTS_REGULAR_FILE_INHERITING;
-        break;
-      case stats.isSocket():
-        filetype = WASI_FILETYPE_SOCKET_STREAM;
-        rightsBase = RIGHTS_SOCKET_BASE;
-        rightsInheriting = RIGHTS_SOCKET_INHERITING;
-        break;
-      case stats.isSymbolicLink():
-        filetype = WASI_FILETYPE_SYMBOLIC_LINK;
-        break;
-      default:
-        filetype = WASI_FILETYPE_UNKNOWN;
-        break;
-    }
+    const {
+      filetype, rightsBase, rightsInheriting,
+    } = translateFileAttributes(fd, stats);
     entry.filetype = filetype;
     if (entry.rights === undefined) {
       entry.rights = {
@@ -917,7 +935,8 @@ class WASI {
         bufPtr += 8;
         this.view.setBigUint64(bufPtr, BigInt(rstats.ino), true);
         bufPtr += 8;
-        this.view.setUint8(bufPtr, stats.filetype);
+        this.view.setUint8(bufPtr,
+                           translateFileAttributes(undefined, rstats).filetype);
         bufPtr += 4;
         this.view.setUint32(bufPtr, Number(rstats.nlink), true);
         bufPtr += 4;
