@@ -15,6 +15,10 @@ fn main() -> std::io::Result<()> {
     loop {
         let mut line = String::new();
         while !input.is_empty() {
+            if input[0].len() > 40 {
+                line += &input.remove(0);
+                break;
+            }
             if input[0].len() + line.len() > 40 {
                 break;
             }
