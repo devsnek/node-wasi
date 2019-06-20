@@ -92,4 +92,4 @@ napi_value Init(napi_env env, napi_value exports) {
 }  // namespace wasi
 }  // namespace node
 
-NAPI_MODULE(wasi, node::wasi::Init);
+NAPI_MODULE(wasi, node::wasi::Init)
