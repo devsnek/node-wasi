@@ -9,10 +9,9 @@ const binding = require('bindings')('wasi');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const perfHooks = require('perf_hooks');
 const { isatty: isTTY } = require('tty');
 const { Buffer } = require('buffer');
-
-const CPUTIME_START = process.hrtime.bigint();
 
 const WASI_ESUCCESS = 0;
 const WASI_E2BIG = 1;
@@ -407,25 +406,27 @@ const SIGNAL_MAP = {
   // [WASI_SIGSYS]: 'SIGSYS',
 };
 
-const now = (clockId) => {
-  switch (clockId) {
-    case WASI_CLOCK_MONOTONIC:
-    case WASI_CLOCK_REALTIME:
-      return process.hrtime.bigint();
-    case WASI_CLOCK_PROCESS_CPUTIME_ID:
-    case WASI_CLOCK_THREAD_CPUTIME_ID:
-      return process.hrtime.bigint(CPUTIME_START);
-    default:
-      return null;
-  }
-};
-
-
 const msToNs = (ms) => {
   const msInt = Math.trunc(ms);
   const decimal = BigInt(Math.round((ms - msInt) * 1000));
   const ns = BigInt(msInt) * 1000n;
   return ns + decimal;
+};
+
+const CPUTIME_START = msToNs(perfHooks.performance.timeOrigin);
+
+const now = (clockId) => {
+  switch (clockId) {
+    case WASI_CLOCK_MONOTONIC:
+      return process.hrtime.bigint();
+    case WASI_CLOCK_REALTIME:
+      return binding.realtime();
+    case WASI_CLOCK_PROCESS_CPUTIME_ID:
+    case WASI_CLOCK_THREAD_CPUTIME_ID:
+      return process.hrtime.bigint() - CPUTIME_START;
+    default:
+      return null;
+  }
 };
 
 const wrap = (f) => (...args) => {
@@ -577,9 +578,9 @@ class WASI {
 
       const buffers = Array.from({ length: iovsLen }, (_, i) => {
         const ptr = iovs + (i * 8);
-        const buf = this.view.getUint32(ptr, true);
+        const bufPtr = this.view.getUint32(ptr, true);
         const bufLen = this.view.getUint32(ptr + 4, true);
-        return new Uint8Array(this.memory.buffer, buf, bufLen);
+        return new Uint8Array(this.memory.buffer, bufPtr, bufLen);
       });
 
       return buffers;
@@ -616,12 +617,12 @@ class WASI {
         this.refreshMemory();
         let coffset = environ;
         let offset = environBuf;
+        const cache = Buffer.from(this.memory.buffer);
         Object.entries(env)
           .forEach(([key, value]) => {
             this.view.setUint32(coffset, offset, true);
             coffset += 4;
-            offset += Buffer.from(this.memory.buffer)
-              .write(`${key}=${value}\0`, offset);
+            offset += cache.write(`${key}=${value}\0`, offset);
           });
         return WASI_ESUCCESS;
       },
@@ -828,6 +829,7 @@ class WASI {
         this.refreshMemory();
         const entries = fs.readdirSync(stats.path, { withFileTypes: true });
         const startPtr = bufPtr;
+        const cache = Buffer.from(this.memory.buffer);
         for (let i = Number(cookie); i < entries.length; i += 1) {
           const entry = entries[i];
           this.view.setBigUint64(bufPtr, BigInt(i + 1), true);
@@ -867,9 +869,7 @@ class WASI {
           this.view.setUint8(bufPtr, filetype);
           bufPtr += 1;
           bufPtr += 3; // padding
-          Buffer.from(this.memory.buffer)
-            .write(entry.name, bufPtr, bufLen - bufPtr);
-          bufPtr += Buffer.byteLength(entry.name);
+          bufPtr += cache.write(entry.name, bufPtr, bufLen - bufPtr);
           bufPtr += (8 % bufPtr); // padding
         }
         const bufused = bufPtr - startPtr;
@@ -879,9 +879,9 @@ class WASI {
       fd_renumber: wrap((from, to) => {
         CHECK_FD(from, 0);
         CHECK_FD(to, 0);
-        fs.closeSync(this.FD_MAP.get(from).real);
-        this.FD_MAP.set(from, this.FD_MAP.get(to));
-        this.FD_MAP.delete(to);
+        fs.closeSync(this.FD_MAP.get(to).real);
+        this.FD_MAP.set(to, this.FD_MAP.get(from));
+        this.FD_MAP.delete(from);
         return WASI_ESUCCESS;
       }),
       fd_seek: wrap((fd, offset, whence, newOffsetPtr) => {
@@ -1264,8 +1264,8 @@ class WASI {
         return WASI_ESUCCESS;
       },
       sched_yield() {
-        // Single threaded environment
-        return WASI_ENOSYS;
+        binding.schedYield();
+        return WASI_ESUCCESS;
       },
       sock_recv() {
         return WASI_ENOSYS;

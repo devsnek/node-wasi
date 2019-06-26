@@ -40,7 +40,7 @@ function parseOptions(string) {
     }
     const [key, value] = line.slice(3).split(': ');
     if (!key || !value) {
-      continue;
+      continue; // eslint-disable-line no-continue
     }
     options[key] = value.replace(/\\n/g, '\n');
   }

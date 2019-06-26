@@ -1,13 +1,16 @@
 #include <cerrno>
 #ifdef _WIN32
 #include <io.h>
+#include <processthreadsapi.h>
 #else
 #include <sys/types.h>
 #include <unistd.h>
+#include <sched.h>
 #endif
+#include <uv.h>
 
 #define NAPI_EXPERIMENTAL
-#include "node_api.h"
+#include <node_api.h>
 
 namespace node {
 namespace wasi {
@@ -35,7 +38,7 @@ napi_value Seek(napi_env env, napi_callback_info info) {
     return nullptr;
   }
 
-  int whence;
+  int32_t whence;
   status = napi_get_value_int32(env, args[2], &whence);
   if (status != napi_ok) {
     return nullptr;
@@ -60,20 +63,52 @@ napi_value Seek(napi_env env, napi_callback_info info) {
   return result;
 }
 
+napi_value SchedYield(napi_env, napi_callback_info) {
+#ifdef _WIN32
+  SwitchToThread();
+#else
+  sched_yield();
+#endif  // WIN32
+  return nullptr;
+}
+
+napi_value Realtime(napi_env env, napi_callback_info) {
+  uv_timeval64_t tv;
+  uv_gettimeofday(&tv);
+
+  uint64_t ns = tv.tv_sec * 1e9;
+  ns += tv.tv_usec * 1000;
+
+  napi_value result;
+  napi_status status = napi_create_bigint_uint64(env, ns, &result);
+
+  if (status != napi_ok) {
+    return nullptr;
+  }
+
+  return result;
+}
+
 napi_value Init(napi_env env, napi_value exports) {
   napi_status status;
 
-  napi_value jseek;
-  status = napi_create_function(
-      env, "seek", NAPI_AUTO_LENGTH, Seek, nullptr, &jseek);
-  if (status != napi_ok) {
-    return nullptr;
+#define V(f, name) \
+  { \
+    napi_value func; \
+    status = napi_create_function( \
+        env, name, NAPI_AUTO_LENGTH, f, nullptr, &func); \
+    if (status != napi_ok) { \
+      return nullptr; \
+    } \
+    status = napi_set_named_property(env, exports, name, func); \
+    if (status != napi_ok) { \
+      return nullptr; \
+    } \
   }
-
-  status = napi_set_named_property(env, exports, "seek", jseek);
-  if (status != napi_ok) {
-    return nullptr;
-  }
+  V(Seek, "seek");
+  V(SchedYield, "schedYield");
+  V(Realtime, "realtime");
+#undef V
 
 #define V(n) \
   { \
